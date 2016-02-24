@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<title>Wiki:Translator</title>
+		<link rel="stylesheet" href="//cdnjs.cloudflare.com/ajax/libs/bootswatch/3.3.6/superhero/bootstrap.min.css">
+	</head>
+	<body>
+		<div class="container">
+			<div class="page-header">
+				<h1>Wiki:Translator <small>Translate using Wikipedia titles</small></h1>
+			</div>
+			<div class="form-group">
+				<label for="source">Translate some stuff (one name/phrase/etc per line):</label>
+				<textarea id="source" class="form-control" rows="5"></textarea>
+			</div>
+			<button id="translate" data-source-lang="en" class="btn btn-primary">Translate</button>
+			<span id="done" class="text-success" style="display:none;">&nbsp;Done!</span>
+			
+			<br /><br />
+			
+			<div id="results" class="table-responsive">
+				<table class="table table-striped table-bordered table-condensed">
+					<thead>
+						<tr data-bind="foreach: _langs">
+							<th data-bind="text: $data"></th>
+						</tr>
+					</thead>
+					<tbody data-bind="foreach: { data: $root._rows, as: 'row' }">
+							<tr data-bind="foreach: { data: $root._langs, as: 'lang' }">
+									<td data-bind="text: row[lang]"></td>
+							</tr>
+					</tbody>
+				</table>
+			</div>
+		</div>
+				
+		<br /><br /><br />
+		
+		<script src="//ajax.googleapis.com/ajax/libs/jquery/2.2.0/jquery.min.js"></script>
+		<script src="//cdnjs.cloudflare.com/ajax/libs/knockout/3.4.0/knockout-min.js"></script>
+		<script src="//maxcdn.bootstrapcdn.com/bootstrap/3.3.6/js/bootstrap.min.js"></script>
+		<script>
+			$(function () {
+				var _delay = 1000; // delay queries by 1s
+				
+				var results = {
+					_langs: ko.observableArray(),
+					_rows: ko.observableArray()
+				};
+				
+				var node = document.getElementById('results');
+				ko.cleanNode(node);
+				ko.applyBindings(results, node);
+				
+				$('#translate').click(function () {
+					var $self = $(this).prop('disabled', true);
+					var $done = $('#done').hide();
+					
+					results._langs.removeAll();
+					results._rows.removeAll();
+				
+					var sourceLang = this.getAttribute('data-source-lang');
+					results._langs.push(sourceLang);
+					
+					var titles = $.grep($('#source').val().trim().split('\n').map(function (title) { return decodeURIComponent(title.trim()); }), function (title) { return !!title; });
+					var url = 'https://' + sourceLang + '.wikipedia.org/w/api.php'
+					
+					var query = function (batch, cont) {
+						var data = {
+							action: 'query',
+							titles: batch.join('|'),
+							prop: 'langlinks',
+							lllimit: 500,
+							format: 'json',
+							formatversion: 2,
+							redirects: null
+						};
+						
+						$.ajax({
+							url: url,
+							data: $.extend(data, cont),
+							dataType: 'jsonp'
+						}).done(function (data) {
+							$.each(data.query.pages, function (i, page) {
+								var result = results[page.title] || {};
+								result[sourceLang] = page.title;
+								
+								$.each(page.langlinks, function (j, link) {
+									if (link.title != page.title) { // only add translations if they're different
+										result[link.lang] = link.title;
+										
+										if (results._langs.indexOf(link.lang) === -1) {
+											results._langs.push(link.lang);
+										}
+									}
+								});
+								
+								var idx = results._rows.indexOf(result);
+								if (idx === -1) {
+									results._rows.push(result);
+									results[page.title] = result;
+								}
+								else {
+									// hack to refresh grid :(
+									results._rows.splice(idx , 1); // removes the item from the array
+									results._rows.splice(idx , 0, result); // adds it back
+								}
+							});
+							
+							if (data.continue) {
+								// continue query...
+								setTimeout(function () {
+									query(batch, data.continue);
+								}, _delay);
+							}
+							else if (titles.length){
+								// start next batch
+								setTimeout(function () {
+									query(titles.splice(0, 50));
+								}, _delay);
+							}
+							else {
+								$self.prop('disabled', false);
+								$done.show();
+							}
+						});
+					};
+					
+					query(titles.splice(0, 50));
+					
+					return false;
+				});
+			});
+		</script>
+	</body>
+</html>
